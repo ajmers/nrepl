@@ -19,6 +19,27 @@
 
 (def ^{:private true} sessions (atom {}))
 
+(defn audit-activity
+  "Middleware constructor which wraps any eval calls to watch local activity."
+  [handler]
+  (fn wrapper
+    [msg]
+    (println "[NREPL-AUDIT] Op:" (:op msg))
+    (let [disallowed-ops #{"add-middleware" "swap-middleware"}
+          log-ops #{"eval" "load-file" "stdin" "ls-middleware"}
+          op (:op msg)]
+      (when (contains? disallowed-ops (:op msg))
+          (throw (ex-info "Changing middleware in a service nREPL is not allowed"
+                          {:op (:op msg)
+                           :msg msg})))
+      (when (contains? log-ops (:op msg))
+        (case op
+          "eval" (println "[NREPL-AUDIT]" (pr-str op (:code msg)))
+          "load-file" (println "[NREPL-AUDIT]" (pr-str op (:file msg)))
+          "ls-middleware" (println "[NREPL-AUDIT]" (pr-str op msg))
+          (println "[NREPL-AUDIT]" (pr-str msg)))))
+    (handler msg)))
+
 (defn close-all-sessions!
   "Use this fn to manually shut down all sessions. Since each new session spanws
    a new thread, and sessions need to be otherwise explicitly closed, we can

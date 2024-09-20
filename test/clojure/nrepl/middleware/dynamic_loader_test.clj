@@ -25,6 +25,36 @@
                         (combine-responses @resps#)))]
        ~@body)))
 
+
+
+(deftest wrap-dynamic-loader-test-with-audit
+  (testing-dynamic "Audit middleware prevents add-middleware from working (throws)"
+    (handle {:op          "add-middleware"
+             :middleware ["nrepl.middleware.session/audit-activity"]})
+    (is (thrown? Exception    (handle {:op          "add-middleware"
+             :middleware ["nrepl.middleware.session/audit-activity"]})))
+    (is (= ["#'nrepl.middleware.dynamic-loader/wrap-dynamic-loader"
+            "#'nrepl.middleware.session/session"
+            "#'nrepl.middleware.session/audit-activity"]
+           (:middleware (handle {:op "ls-middleware"})))))
+  (testing-dynamic "Audit middleware prevents Swap-middleware from working (throws)"
+    (handle {:op          "add-middleware"
+             :middleware ["#'nrepl.middleware.session/audit-activity"]})
+    (is (= 3 ;; now we have all these: session eval print caught dynamic
+           (count (:middleware (handle {:op "ls-middleware"})))))
+    (is (thrown? Exception
+                 (handle {:op          "swap-middleware"
+                          :middleware ["nrepl.middleware.dynamic-loader/wrap-dynamic-loader"]})                 ))
+
+    (let [ls-result (:middleware (handle {:op "ls-middleware"}))]
+      (is (= 3 (count ls-result)))
+      ;;  wrap-dynamic-loader *requires* session, that's why session is here even though we didn't add it specifically
+      (is (= (set ls-result)
+             (set ["#'nrepl.middleware.session/audit-activity"
+                   "#'nrepl.middleware.dynamic-loader/wrap-dynamic-loader"
+                   "#'nrepl.middleware.session/session"
+                   ]))))))
+
 (deftest wrap-dynamic-loader-test
   (testing-dynamic "Booting with no middleware"
     (is (= ["#'nrepl.middleware.dynamic-loader/wrap-dynamic-loader"]
